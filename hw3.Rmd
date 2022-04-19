@@ -1,0 +1,198 @@
+---
+title: "Homework Assignment 3"
+author: "Johnny JI"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(tidymodels)
+library(data.table)
+library(corrplot)
+library(discrim)
+library(klaR)
+library(dplyr)
+library(corrr)
+set.seed(422)
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+options(digits = 4)
+```
+
+##Load the data
+
+```{r}
+titanic<- read.csv("data/titanic.csv")
+titanic$survived <- as.factor(titanic$survived)
+titanic$pclass <- as.factor(titanic$pclass)
+titanic$survived <- factor(titanic$survived, levels = c("Yes","No"))
+head(titanic)
+```
+
+
+## Q1
+
+```{r}
+titanic_split <- initial_split(titanic, prop = 0.80,strata = "survived")
+titanic_train <- training(titanic_split)
+titanic_test <- testing(titanic_split)
+# checking the missing value
+print(sapply(titanic_train, function(x) sum(is.na(x))))
+```
+
+The goal to use stratified sampling stratified sampling is to make sure  we have proper representation of the entire population being studied
+
+## Q2
+```{r}
+titanic_train %>% 
+ ggplot(aes(x = survived)) +
+ geom_bar()
+```
+
+We can see most people are not survived.
+
+### Question 3
+```{r}
+#correlation matrix
+titanic_train_cor = titanic_train[ , !(names(titanic_train) %in% c("cabin", "embarked"))] %>% copy()
+titanic_train_cor = titanic_train_cor %>% drop_na()
+corrplot(cor(titanic_train_cor[ , sapply(titanic_train_cor, is.numeric)]), 
+         method="number", type="lower")
+
+#visualization matrix
+cor_titanic <- select_if(titanic_train_cor,is.numeric) %>% correlate()
+rplot(cor_titanic)
+```
+
+
+
+We can find that, negative correlation between the sib_sp and age, and positive correlation between the parch and sib_sp.
+
+
+### Question 4
+```{r}
+titanic_recipe = recipe(survived ~ pclass + age+ sex +sib_sp + parch + fare, data=titanic_train) %>%
+ step_impute_linear(age) %>%
+ step_dummy(all_nominal_predictors()) %>%
+ step_interact( ~ starts_with("sex"):fare+ age:fare)
+```
+
+
+### Question 5
+```{r}
+log_reg = logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+log_wkflow = workflow() %>%
+  add_model(log_reg) %>%
+  add_recipe(titanic_recipe)
+log_fit <- fit(log_wkflow, titanic_train)
+```
+
+### Question 6
+```{r}
+lda_model = discrim_linear() %>%
+  set_engine("MASS") %>%
+  set_mode("classification")
+lda_workflow = workflow() %>%
+  add_model(lda_model) %>%
+  add_recipe(titanic_recipe)
+lda_fit <- fit(lda_workflow, titanic_train)
+```
+
+
+### Question 7
+```{r}
+qda_model = discrim_quad() %>%
+  set_engine("MASS") %>%
+  set_mode("classification")
+qda_workflow = workflow() %>%
+  add_model(qda_model) %>%
+  add_recipe(titanic_recipe)
+qda_fit <- fit(qda_workflow, titanic_train)
+```
+
+### Question 8
+```{r}
+nb_mod <- naive_Bayes() %>% 
+ set_mode("classification") %>% 
+ set_engine("klaR") %>% 
+ set_args(usekernel = FALSE) 
+nb_workflow <- workflow() %>% 
+ add_model(nb_mod) %>% 
+ add_recipe(titanic_recipe)
+nb_fit <- fit(nb_workflow, titanic_train)
+```
+
+
+### Question 9
+```{r}
+bound_train_data = bind_cols(predict(log_fit, titanic_train),
+                             predict(lda_fit, titanic_train),
+                             predict(qda_fit, titanic_train),
+                             predict(nb_fit, titanic_train),
+                             titanic_train$survived)
+colnames(bound_train_data) = c("Log Predict", "Lda Predict", "Qda Predict",
+                               "NB Predict", "Truth")
+```
+
+
+```{r}
+#The logistic model accuracy
+print(augment(log_fit, new_data = titanic_train) %>%
+ accuracy(truth = survived, estimate = .pred_class))
+
+```
+```{r}
+#The linear discriminant analysis model accuracy
+print(augment(lda_fit, new_data = titanic_train) %>%
+ accuracy(truth = survived, estimate = .pred_class))
+```
+```{r}
+
+#The quadratic discriminant analysis model accuracy
+print( augment(qda_fit, new_data = titanic_train) %>%
+ accuracy(truth = survived, estimate = .pred_class))
+```
+
+```{r}
+#The native bayesian model accuracy
+print( augment(nb_fit, new_data = titanic_train) %>%
+ accuracy(truth = survived, estimate = .pred_class))
+```
+
+Therefore, logicstic model has the highest accuracy of 0.8104
+
+### Question 10
+```{r}
+bound_test_data = bind_cols(predict(log_fit, titanic_test),
+                            titanic_test$survived)
+colnames(bound_test_data) = c("Log Predict", "True")
+print(accuracy(bound_test_data, 
+               truth="True", estimate="Log Predict")$.estimate)
+```
+The logistic regression model achieved about 84% accuracy on the test set.
+
+```{r}
+conf_mat(bound_test_data, truth="True", estimate="Log Predict")
+```
+```{r}
+roc = log_fit %>%
+  predict(new_data=titanic_test, type="prob") %>%
+  bind_cols(titanic_test) %>%
+  roc_curve(survived, .pred_Yes, event_level="second")
+autoplot(roc)
+```
+```{r}
+auc = log_fit %>%
+  predict(new_data=titanic_test, type="prob") %>%
+  bind_cols(titanic_test) %>%
+  roc_auc(survived, .pred_Yes, event_level="second")
+print(auc$.estimate)
+```
+The model performed OK for very limited feature engineering and no hyperparameter optimization. We got around 81% train and 84% test accuracy respectively. The values differ due to randomness in the data as well as the train/test split that was done.
+
+
