@@ -17,7 +17,7 @@ library(discrim)
 library(klaR)
 library(dplyr)
 library(corrr)
-set.seed(422)
+set.seed(891)
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 options(digits = 4)
 ```
@@ -28,12 +28,11 @@ options(digits = 4)
 titanic<- read.csv("data/titanic.csv")
 titanic$survived <- as.factor(titanic$survived)
 titanic$pclass <- as.factor(titanic$pclass)
-titanic$survived <- factor(titanic$survived, levels = c("Yes","No"))
 head(titanic)
 ```
 
 
-## Q1
+### Question 1
 
 ```{r}
 titanic_split <- initial_split(titanic, prop = 0.80,strata = "survived")
@@ -45,7 +44,7 @@ print(sapply(titanic_train, function(x) sum(is.na(x))))
 
 The goal to use stratified sampling stratified sampling is to make sure  we have proper representation of the entire population being studied
 
-## Q2
+### Question 2
 ```{r}
 titanic_train %>% 
  ggplot(aes(x = survived)) +
@@ -83,13 +82,13 @@ titanic_recipe = recipe(survived ~ pclass + age+ sex +sib_sp + parch + fare, dat
 
 ### Question 5
 ```{r}
-log_reg = logistic_reg() %>%
+log_model = logistic_reg() %>%
   set_engine("glm") %>%
   set_mode("classification")
-log_wkflow = workflow() %>%
-  add_model(log_reg) %>%
+log_workflow = workflow() %>%
+  add_model(log_model) %>%
   add_recipe(titanic_recipe)
-log_fit <- fit(log_wkflow, titanic_train)
+log_fit<- fit(log_workflow, titanic_train)
 ```
 
 ### Question 6
@@ -135,7 +134,7 @@ bound_train_data = bind_cols(predict(log_fit, titanic_train),
                              predict(qda_fit, titanic_train),
                              predict(nb_fit, titanic_train),
                              titanic_train$survived)
-colnames(bound_train_data) = c("Log Predict", "Lda Predict", "Qda Predict",
+colnames(bound_train_data) = c("log Predict", "lda Predict", "qda Predict",
                                "NB Predict", "Truth")
 ```
 
@@ -164,20 +163,21 @@ print( augment(nb_fit, new_data = titanic_train) %>%
  accuracy(truth = survived, estimate = .pred_class))
 ```
 
-Therefore, logicstic model has the highest accuracy of 0.8104
+Therefore, logicstic model has the highest accuracy of 0.815
+
 
 ### Question 10
 ```{r}
 bound_test_data = bind_cols(predict(log_fit, titanic_test),
                             titanic_test$survived)
-colnames(bound_test_data) = c("Log Predict", "True")
+colnames(bound_test_data) = c("log Predict", "True")
 print(accuracy(bound_test_data, 
-               truth="True", estimate="Log Predict")$.estimate)
+               truth="True", estimate="log Predict")$.estimate)
 ```
-The logistic regression model achieved about 84% accuracy on the test set.
+The logistic regression model has  about 81% accuracy on the test set.
 
 ```{r}
-conf_mat(bound_test_data, truth="True", estimate="Log Predict")
+conf_mat(bound_test_data, truth="True", estimate="log Predict")
 ```
 ```{r}
 roc = log_fit %>%
@@ -193,6 +193,55 @@ auc = log_fit %>%
   roc_auc(survived, .pred_Yes, event_level="second")
 print(auc$.estimate)
 ```
-The model performed OK for very limited feature engineering and no hyperparameter optimization. We got around 81% train and 84% test accuracy respectively. The values differ due to randomness in the data as well as the train/test split that was done.
+ We got around 81.01% train and  85.11% test accuracy. The slight different may caused by when we split the data, more data are used to train. In conclusion, we can tell that the this model is good for predict the data, 
+
+
+### Question 11
+
+
+$z = logit(p) = log \dfrac{p}{1-p} $
+
+$e^z = \dfrac{p}{1-p}$
+
+$1 + e^z = \dfrac{1-p}{1-p} + \dfrac{p}{1-p} = \dfrac{1}{1-p}$
+
+$\dfrac{1}{1 + e^z} = 1 - p$
+
+Thus we get that 
+
+$p = 1 - \dfrac{1}{1 + e^z} = \dfrac{e^z}{1 + e^z}$
+
+
+### Question 12
+
+
+When increase by 2, we get that 
+
+$z= \beta_0 +\beta_1(x_1 +2)$
+
+
+which we know that 
+
+$\beta_0 +\beta_1x_1 =log(\dfrac {p(z)}{1-p(z)})=\dfrac{e^{\beta_0 + \beta1x1}}{1+e^{\beta_0 + \beta1x1}}$
+
+Then 
+
+$logstic(z)=\dfrac{e^{\beta_0 + \beta1x1} e^{2\beta1}}{1+e^{\beta_0 + \beta1x1} e^{2\beta1}}$
+
+
+If$\beta_1$ is negative then increasing$x_1$ will be associated with decreasing $p$.$p$ approach$0$ as$x_1$ approaches$\infty$ , and$p$ approach$1$ as $x_1$
+ approaches$-\infty$ .
+
+
+
+
+
+
+
+
+
+
+
+
 
 
